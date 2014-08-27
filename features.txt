@@ -1,0 +1,12 @@
+X -- adding items
+X -- removing items
+X -- listing items
+-- listing filtered by +project or @context, or containing words
+-- editing priorities
+-- sorting by priority
+-- marking as done
+-- adding done date
+-- moving to done.txt
+-- specifying custom todo.txt and done.txt locations
+-- reading preferences from file
+-- accepting preference file location from command line and env variable
