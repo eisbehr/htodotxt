@@ -4,10 +4,17 @@ X -- listing items
 X -- marking as done
 X -- removing mark as done
 -- listing filtered by +project or @context, or containing words
+   -- -f option with list of space separated +project and @context to filter
 -- editing priorities
+   -- simple command to supply new priority (-p)
+   -- maybe split into one command to pick todo item, other commands work on 
+      picked item "htodotxt -i 1 -p A"
+                  "htodotxt -f "~/banana/derp.txt" -i 1 -d"
 -- sorting by priority
 -- adding creation date
--- moving to done.txt
+-- moving to done.txt; archive (-a)
 -- specifying custom todo.txt and done.txt locations
--- reading preferences from file
--- accepting preference file location from command line and env variable
+   X -- already done for todo.txt
+   -- done.txt not yet implemented
+-- reading preferences from file 
+   -- accepting preference file location from command line and env variable
