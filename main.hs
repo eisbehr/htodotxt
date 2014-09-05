@@ -1,5 +1,6 @@
+
 import           Data.Char
-import           Data.Maybe            (mapMaybe, fromJust)
+import           Data.Maybe            (mapMaybe, fromJust, fromMaybe)
 import           System.Console.GetOpt 
 import           System.Environment    (getArgs)
 import           System.Exit()
@@ -24,10 +25,8 @@ bsWriteFile path s = C.writeFile path $ C.pack s
 main :: IO()
 main = do
   args <- getArgs
-  --putStrLn $ unlines args
   let (actions, _ , _) = getOpt RequireOrder options args
   opts <- foldl (>>=) (return defaultOptions) actions
-  -- TODO: Get actual progname in the options
   ls <- input opts >>= work opts
   output opts ls
   write opts ls
@@ -44,7 +43,7 @@ main = do
         output :: Options -> TodoList -> IO()
         output opt lst = case optStdOut opt of
             OptString -> putStrLn $ optOutputStr opt
-            OutList -> putStrLn $ list lst
+            OutList -> putStrLn $ list lst (optFilterStr opt)
             Version -> putStrLn $ showVersion (optProgName opt)
             None -> putStr ""
         write :: Options -> TodoList -> IO()
@@ -64,9 +63,16 @@ do' n ls = markTodoItemAsDone ls (n - 1)
 undo' :: Int -> TodoList -> TodoList
 undo' n ls = unMarkTodoItemAsDone ls (n - 1)
 
+list :: TodoList -> Maybe String -> String
+list tl filters = unlines $ prepareTodoListForPrint filters tl
+
+showVersion :: String -> String
+showVersion  progName = unlines ["hTodotxt - " ++ version, "Usage information: " ++ progName ++ " -h"]
+
 data Options = Options {
   optWork       :: WorkFlag,
   optItemNumber :: Maybe Int,
+  optFilterStr  :: Maybe String,
   optInputStr   :: String,
   optTodoFile   :: FilePath,
   optWriteOut   :: Bool,
@@ -83,6 +89,7 @@ defaultOptions :: Options
 defaultOptions = Options {
                    optWork = Neither,
                    optItemNumber = Nothing,
+                   optFilterStr = Nothing,
                    optInputStr = "",
                    optTodoFile = "todo.txt",
                    optWriteOut = False,
@@ -94,18 +101,16 @@ defaultOptions = Options {
 options :: [OptDescr (Options -> IO Options)]
 options = [
  Option ['v'] ["version"] (NoArg optShowVersion) "Show version number",
- Option ['f'] ["file"] (ReqArg optSetFilePath "FILE") "Specify a todo file different from default",
+ Option ['t'] ["todofile"] (ReqArg optSetFilePath "FILE") "Specify a todo file different from default",
  Option ['i'] ["item"] (ReqArg optSetItemNumber "ITEMNR") "Set the Todo item to work on",
  Option ['l'] ["list"] (NoArg optReadTodoList) "Show items in list with prepend number",
  Option ['a'] ["add"] (ReqArg optAddItem "TODOITEM") "Add a todo item to the list",
  Option ['r'] ["remove"] (NoArg optRemoveItem) "Remove a todo item from the list",
  Option ['d'] ["done"] (NoArg optDoneItem) "Mark todo item as done",
  Option ['u'] ["undone"] (NoArg optUnDoneItem) "Remove Mark as done",
+ Option ['f'] ["filter"] (ReqArg optFilterTodoList "FILTERLIST") "Filter todo list by arbitrary whole words",
  Option ['h'] ["help"] (NoArg optShowHelp) "Show this help"
  ]
-
-showVersion :: String -> String
-showVersion  progName = unlines ["hTodotxt - " ++ version, "Usage information: " ++ progName ++ " -h"]
 
 optShowVersion :: Options -> IO Options
 optShowVersion opt = return opt { optStdOut = Version }
@@ -121,6 +126,10 @@ optShowHelp opt = return opt { optStdOut = OptString,
   
 optReadTodoList :: Options -> IO Options
 optReadTodoList opt = return opt { optStdOut = OutList}
+
+optFilterTodoList :: String -> Options -> IO Options
+optFilterTodoList arg opt = return opt { optStdOut = OutList,
+                                         optFilterStr = Just arg }
 
 optSetItemNumber :: String -> Options -> IO Options
 optSetItemNumber arg opt = return opt { optItemNumber = Just $ digitToInt $ head arg }
@@ -144,12 +153,6 @@ optDoneItem opt = return opt { optWork = Do,
 optUnDoneItem :: Options -> IO Options
 optUnDoneItem opt = return opt { optWork = Undo,
                                  optWriteOut = True }
-    
---appendLine :: String -> String -> IO String
---appendLine line lst = return .  writeTodoListToString $ appendTodoItemToList (readTodoListFromString lst) (readTodoItemFromLine line)
-
-list :: TodoList -> String
-list tl = unlines $ prepareTodoListForPrint [] tl
 
 -- ### Pure todotxt functions ### --
 data TodoItem = TodoItem { text     :: String
@@ -161,10 +164,16 @@ data TodoItem = TodoItem { text     :: String
 
 type TodoList = [TodoItem]
 
-prepareTodoListForPrint :: [String] -> TodoList -> [String]
-prepareTodoListForPrint acc lst
-    | not (null lst) = prepareTodoListForPrint (text (last lst):acc) (init lst)
-    | otherwise = zipWith (\a b -> show a ++ ": " ++ b) ([1..] :: [Int]) acc
+prepareTodoListForPrint :: Maybe String-> TodoList -> [String]
+prepareTodoListForPrint listFilter lst = filter' (fromMaybe "" listFilter) . zip' . lines $ writeTodoListToString lst
+  where
+    zip' :: [String] -> [String]
+    zip' lst1 = zipWith (\a b -> show a ++ ": " ++ b) ([1..] :: [Int]) lst1
+    filter' :: String -> [String] -> [String]
+    filter' "" lst2 = lst2
+    filter' listFilter1 lst3 = filter (\ a -> contains (words listFilter1) a) lst3
+    contains :: [String] -> String -> Bool
+    contains filters item = and $ map (\ a -> a `elem` (words item)) filters
 
 readTodoListFromString :: String -> TodoList
 readTodoListFromString s = map readTodoItemFromLine $ lines s
