@@ -2,7 +2,7 @@
 import           Data.Char
 import           Data.Maybe            (mapMaybe, fromJust, fromMaybe)
 import           System.Console.GetOpt 
-import           System.Environment    (getArgs)
+import           System.Environment    (getArgs, getProgName)
 import           System.Exit()
 
 import qualified Data.ByteString.Char8 as C
@@ -44,7 +44,7 @@ main = do
         output opt lst = case optStdOut opt of
             OptString -> putStrLn $ optOutputStr opt
             OutList -> putStrLn $ list lst (optFilterStr opt)
-            Version -> putStrLn $ showVersion (optProgName opt)
+            Version -> getProgName >>= showVersion >>= putStrLn
             None -> putStr ""
         write :: Options -> TodoList -> IO()
         write opt lst 
@@ -66,8 +66,8 @@ undo' n ls = unMarkTodoItemAsDone ls (n - 1)
 list :: TodoList -> Maybe String -> String
 list tl filters = unlines $ prepareTodoListForPrint filters tl
 
-showVersion :: String -> String
-showVersion  progName = unlines ["hTodotxt - " ++ version, "Usage information: " ++ progName ++ " -h"]
+showVersion :: String -> IO String
+showVersion  progName = return $ unlines ["hTodotxt - " ++ version, "Usage information: " ++ progName ++ " -h"]
 
 data Options = Options {
   optWork       :: WorkFlag,
@@ -77,8 +77,7 @@ data Options = Options {
   optTodoFile   :: FilePath,
   optWriteOut   :: Bool,
   optStdOut     :: StdOutValue,
-  optOutputStr  :: String,
-  optProgName   :: String
+  optOutputStr  :: String
   }
 
 data WorkFlag = Add | Remove | Do | Undo | Neither
@@ -94,8 +93,7 @@ defaultOptions = Options {
                    optTodoFile = "todo.txt",
                    optWriteOut = False,
                    optStdOut = None,
-                   optOutputStr = "Empty",
-                   optProgName = "htodotxt"
+                   optOutputStr = "Empty"
                  }
 
 options :: [OptDescr (Options -> IO Options)]
@@ -165,13 +163,13 @@ data TodoItem = TodoItem { text     :: String
 type TodoList = [TodoItem]
 
 prepareTodoListForPrint :: Maybe String-> TodoList -> [String]
-prepareTodoListForPrint listFilter lst = filter' (fromMaybe "" listFilter) . zip' . lines $ writeTodoListToString lst
+prepareTodoListForPrint listFilter lst = filter' listFilter . zip' . lines $ writeTodoListToString lst
   where
     zip' :: [String] -> [String]
     zip' lst1 = zipWith (\a b -> show a ++ ": " ++ b) ([1..] :: [Int]) lst1
-    filter' :: String -> [String] -> [String]
-    filter' "" lst2 = lst2
-    filter' listFilter1 lst3 = filter (\ a -> contains (words listFilter1) a) lst3
+    filter' :: Maybe String -> [String] -> [String]
+    filter' Nothing lst2 = lst2
+    filter' (Just listFilter1) lst3 = filter (\ a -> contains (words listFilter1) a) lst3
     contains :: [String] -> String -> Bool
     contains filters item = and $ map (\ a -> a `elem` (words item)) filters
 
