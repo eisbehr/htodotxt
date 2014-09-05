@@ -1,6 +1,6 @@
 import           Data.Char
-import           Data.Maybe            (mapMaybe)
-import           System.Console.GetOpt
+import           Data.Maybe            (mapMaybe, fromJust)
+import           System.Console.GetOpt 
 import           System.Environment    (getArgs)
 import           System.Exit()
 
@@ -24,9 +24,10 @@ bsWriteFile path s = C.writeFile path $ C.pack s
 main :: IO()
 main = do
   args <- getArgs
+  --putStrLn $ unlines args
   let (actions, _ , _) = getOpt RequireOrder options args
   opts <- foldl (>>=) (return defaultOptions) actions
-  -- TODO: Get actual progname int the options
+  -- TODO: Get actual progname in the options
   ls <- input opts >>= work opts
   output opts ls
   write opts ls
@@ -34,7 +35,12 @@ main = do
         input :: Options -> IO TodoList
         input opt = bsReadFile (optTodoFile opt) >>= return . readTodoListFromString
         work :: Options -> TodoList -> IO TodoList
-        work opt = (optWork opt)
+        work opt lst = case optWork opt of
+          Add -> return $ add' (optInputStr opt) lst
+          Remove -> return $ remove' (fromJust (optItemNumber opt)) lst
+          Do -> return $ do' (fromJust (optItemNumber opt)) lst
+          Undo -> return $ undo' (fromJust (optItemNumber opt)) lst
+          Neither -> return lst
         output :: Options -> TodoList -> IO()
         output opt lst = case optStdOut opt of
             OptString -> putStrLn $ optOutputStr opt
@@ -46,11 +52,22 @@ main = do
             | optWriteOut opt = bsWriteFile (optTodoFile opt) $ writeTodoListToString lst
             | otherwise = putStr ""
 
-data Options = Options {
-  -- repl options
-  optWork   :: TodoList -> IO TodoList,
+add' :: String -> TodoList -> TodoList
+add' st ls = appendTodoItemToList ls (readTodoItemFromLine st)
 
-  -- Value options
+remove' :: Int -> TodoList -> TodoList
+remove' n ls = removeTodoItemFromList ls (n - 1)
+
+do' :: Int -> TodoList -> TodoList
+do' n ls = markTodoItemAsDone ls (n - 1)
+
+undo' :: Int -> TodoList -> TodoList
+undo' n ls = unMarkTodoItemAsDone ls (n - 1)
+
+data Options = Options {
+  optWork       :: WorkFlag,
+  optItemNumber :: Maybe Int,
+  optInputStr   :: String,
   optTodoFile   :: FilePath,
   optWriteOut   :: Bool,
   optStdOut     :: StdOutValue,
@@ -58,36 +75,43 @@ data Options = Options {
   optProgName   :: String
   }
 
+data WorkFlag = Add | Remove | Do | Undo | Neither
+
 data StdOutValue = OutList | Version | OptString | None
 
 defaultOptions :: Options
 defaultOptions = Options {
-                   optWork = return . id,
-
+                   optWork = Neither,
+                   optItemNumber = Nothing,
+                   optInputStr = "",
                    optTodoFile = "todo.txt",
                    optWriteOut = False,
-                   optStdOut = Version,
+                   optStdOut = None,
                    optOutputStr = "Empty",
                    optProgName = "htodotxt"
                  }
 
 options :: [OptDescr (Options -> IO Options)]
 options = [
- Option ['v'] ["version"] (NoArg undefined) "Show version number",
- Option ['f'] ["file"] (ReqArg setFilePath "FILE") "Specify a todo file different from default",
- Option ['l'] ["list"] (NoArg readTodoList) "Show items in list with prepend number",
- Option ['a'] ["add"] (ReqArg addItem "TODOITEM") "Add a todo item to the list",
- Option ['r'] ["remove"] (ReqArg removeItem "ITEM NUMBER") "Remove a todo item from the list",
- Option ['d'] ["done"] (ReqArg doneItem "ITEM NUMBER") "Mark todo item as done",
- Option ['u'] ["undone"] (ReqArg unDoneItem "ITEM NUMBER") "Remove Mark as done",
- Option ['h'] ["help"] (NoArg showHelp) "Show this help"
+ Option ['v'] ["version"] (NoArg optShowVersion) "Show version number",
+ Option ['f'] ["file"] (ReqArg optSetFilePath "FILE") "Specify a todo file different from default",
+ Option ['i'] ["item"] (ReqArg optSetItemNumber "ITEMNR") "Set the Todo item to work on",
+ Option ['l'] ["list"] (NoArg optReadTodoList) "Show items in list with prepend number",
+ Option ['a'] ["add"] (ReqArg optAddItem "TODOITEM") "Add a todo item to the list",
+ Option ['r'] ["remove"] (NoArg optRemoveItem) "Remove a todo item from the list",
+ Option ['d'] ["done"] (NoArg optDoneItem) "Mark todo item as done",
+ Option ['u'] ["undone"] (NoArg optUnDoneItem) "Remove Mark as done",
+ Option ['h'] ["help"] (NoArg optShowHelp) "Show this help"
  ]
 
 showVersion :: String -> String
 showVersion  progName = unlines ["hTodotxt - " ++ version, "Usage information: " ++ progName ++ " -h"]
 
-showHelp :: Options -> IO Options
-showHelp opt = return opt { optStdOut = OptString,
+optShowVersion :: Options -> IO Options
+optShowVersion opt = return opt { optStdOut = Version }
+
+optShowHelp :: Options -> IO Options
+optShowHelp opt = return opt { optStdOut = OptString,
                             optOutputStr = helpstring header}
   where
     helpstring :: String -> String
@@ -95,44 +119,32 @@ showHelp opt = return opt { optStdOut = OptString,
     header :: String
     header = "Order of options matters, files come first."
   
-readTodoList :: Options -> IO Options
-readTodoList opt = return opt { optStdOut = OutList}
+optReadTodoList :: Options -> IO Options
+optReadTodoList opt = return opt { optStdOut = OutList}
 
-setFilePath :: String -> Options -> IO Options
-setFilePath arg opt = return opt { optTodoFile = arg }
+optSetItemNumber :: String -> Options -> IO Options
+optSetItemNumber arg opt = return opt { optItemNumber = Just $ digitToInt $ head arg }
 
-addItem :: String -> Options -> IO Options 
-addItem arg opt = return opt { optWork = return . appendIt arg,
-                               optWriteOut = True,
-                               optStdOut = None }
-    where
-      appendIt :: String -> TodoList -> TodoList
-      appendIt st ls = appendTodoItemToList ls (readTodoItemFromLine st)
+optSetFilePath :: String -> Options -> IO Options
+optSetFilePath arg opt = return opt { optTodoFile = arg }
 
-removeItem :: String -> Options -> IO Options
-removeItem arg opt = return opt { optWork = return . remove (digitToInt (head arg)),
-                                  optWriteOut = True,
-                                  optStdOut = None }
-  where
-    remove :: Int -> TodoList -> TodoList
-    remove n ls = removeTodoItemFromList ls (n - 1)
+optAddItem :: String -> Options -> IO Options 
+optAddItem arg opt = return opt { optWork = Add,
+                                  optInputStr = arg,
+                                  optWriteOut = True }
 
-doneItem :: String -> Options -> IO Options
-doneItem arg opt = return opt { optWork = return . done' (digitToInt (head arg)),
-                                optWriteOut = True,
-                                optStdOut = None }
-  where
-    done' :: Int -> TodoList -> TodoList
-    done' n ls = markTodoItemAsDone ls (n - 1)
+optRemoveItem :: Options -> IO Options
+optRemoveItem opt = return opt { optWork = Remove,
+                                 optWriteOut = True }
 
-unDoneItem :: String -> Options -> IO Options
-unDoneItem arg opt = return opt { optWork = return . unDone (digitToInt (head arg)),
-                                  optWriteOut = True,
-                                  optStdOut = None }
-  where
-    unDone :: Int -> TodoList -> TodoList
-    unDone n ls = unMarkTodoItemAsDone ls (n - 1)
+optDoneItem :: Options -> IO Options
+optDoneItem opt = return opt { optWork = Do,
+                               optWriteOut = True }
 
+optUnDoneItem :: Options -> IO Options
+optUnDoneItem opt = return opt { optWork = Undo,
+                                 optWriteOut = True }
+    
 --appendLine :: String -> String -> IO String
 --appendLine line lst = return .  writeTodoListToString $ appendTodoItemToList (readTodoListFromString lst) (readTodoItemFromLine line)
 
