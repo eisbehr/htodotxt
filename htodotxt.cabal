@@ -19,7 +19,7 @@ synopsis:            todo.txt (todotxt.com) implementation in Haskell
 -- description:         
 
 -- URL for the project homepage or repository.
-homepage:            http://eisbehr.github.io/htodotxt
+homepage:            https://github.com/eisbehr/htodotxt
 
 -- The license under which the package is released.
 -- license:             
